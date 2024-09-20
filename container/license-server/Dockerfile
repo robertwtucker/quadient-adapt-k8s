@@ -28,5 +28,5 @@ EXPOSE 5000
 WORKDIR ${ADAPT_PATH}/ls
 USER ${USER_ID}
 
-ENTRYPOINT ["entrypoint.sh"]
+ENTRYPOINT [ "entrypoint.sh" ]
 CMD [ "cdplicser" ]
