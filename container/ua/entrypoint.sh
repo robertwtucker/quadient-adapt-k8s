@@ -2,10 +2,17 @@
 
 set -e
 
-ADAPT_PATH=/opt/adapt
+[ "${DEBUG}" == 'true' ] && set -x
+
+: ${ADAPT_PATH:=/opt/adapt}
 
 ## Create symbolic links to license and configuration files
-ln -sf ${ADAPT_PATH}/etc/adeptua.lic ${ADAPT_PATH}/ua/adeptua.lic
-ln -sf ${ADAPT_PATH}/etc/*.ini ${ADAPT_PATH}/ua/
+for FILE in "${ADAPT_PATH}"/etc/*; do
+	ln -sf "${FILE}" "${ADAPT_PATH}"/ua/$(basename ${FILE})
+done
 
-exec "$@"
+if [ "$(basename $1)" == "deploy" ]; then
+	cp -RL "${ADAPT_PATH}"/ua/ /shared-vol
+else
+	exec "$@"
+fi
