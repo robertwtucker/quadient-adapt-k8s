@@ -38,9 +38,10 @@ spec:
         - name: {{ include "adapt.fullname" . }}-deploy-ua
           image: "{{ .Values.ua.image.name }}:{{ .Values.ua.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.ua.image.pullPolicy }}
+          args: [share]
           volumeMounts:
-            - name: adapt-shared
-              mountPath: /opt/adapt/ua
+            - name: ua-share
+              mountPath: /opt/adapt/share
           {{- with .Values.ua.volumeMounts }}
             {{- toYaml . | nindent 12 }}
           {{- end }}
@@ -66,8 +67,8 @@ spec:
               mountPath: /opt/adapt/ls/cdplicser.cfg
               subPath: cdplicser.cfg
           {{- if .Values.deployProduct }}
-            - name: adapt-shared
-              mountPath: /opt/adapt/shared
+            - name: ua-share
+              mountPath: /opt/adapt/ua
           {{- end }}
           {{- with .Values.licenseServer.volumeMounts }}
             {{- toYaml . | nindent 12 }}
@@ -77,7 +78,7 @@ spec:
           configMap:
             name: {{ include "adapt.fullname" . }}-ls-config
       {{- if .Values.deployProduct }}
-        - name: adapt-shared
+        - name: ua-share
           emptyDir: {}
       {{- with .Values.ua.volumes }}
         {{- toYaml . | nindent 8 }}
