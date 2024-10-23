@@ -23,9 +23,11 @@ spec:
         {{- toYaml . | nindent 8 }}
         {{- end }}
     spec:
-      {{- with .Values.imagePullSecrets }}
+      {{ if .Values.imagePullSecrets }}
       imagePullSecrets:
-        {{- toYaml . | nindent 8 }}
+      {{- range .Values.imagePullSecrets }}
+        - name: {{ . }}
+      {{- end }}
       {{- end }}
       {{- if .Values.licenseServer.hostname }}
       hostname: {{ .Values.licenseServer.hostname }}
