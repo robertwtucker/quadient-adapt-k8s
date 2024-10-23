@@ -1,0 +1,146 @@
+# Default values for adaptls.
+
+# This defines the container image
+image:
+  name: adapt/license-server
+  tag: latest
+  pullPolicy: IfNotPresent
+
+# Config settings
+hostname: ''
+licenseFile: /opt/adapt/etc/LicSer.lic
+logFile: /var/log/adapt/cdplicser.log
+
+# Additional volumes on the output Deployment definition.
+volumes: []
+# - name: ls-license
+#   secret:
+#     secretName: ls-license
+#     optional: false
+
+# Additional volumeMounts on the output Deployment definition.
+volumeMounts: []
+# - name: ls-license
+#   mountPath: /opt/adapt/etc/LicSer.lic
+#   subPath: LicSer.lic
+#   readOnly: true
+
+existingServiceAccount: ''
+
+# -- Internal parameter
+role: adaptls
+
+# This will set the replicaset count
+# more information: https://kubernetes.io/docs/concepts/workloads/controllers/replicaset/
+replicaCount: 1
+
+# This is for setting Kubernetes Annotations to a Pod.
+# For more information checkout: https://kubernetes.io/docs/concepts/overview/working-with-objects/annotations/
+podAnnotations: {}
+
+# This is for setting Kubernetes Labels to a Pod.
+# For more information checkout: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
+podLabels: {}
+
+podSecurityContext:
+  # -- Learn about this setting at https://kubernetes.io/docs/tasks/configure-pod-container/security-context/#set-the-security-context-for-a-pod.
+  runAsUser: 1001
+  # -- Learn about this setting at https://kubernetes.io/docs/tasks/configure-pod-container/security-context/#set-the-security-context-for-a-pod.
+  fsGroup: 1001
+  # -- Learn about this setting at https://kubernetes.io/docs/tasks/configure-pod-container/security-context/#set-the-security-context-for-a-pod.
+  runAsNonRoot: true
+  # -- Learn about this setting at https://kubernetes.io/docs/tasks/configure-pod-container/security-context/#set-the-seccomp-profile-for-a-container.
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  # -- Learn about this setting at https://kubernetes.io/docs/tasks/configure-pod-container/security-context/#set-the-security-context-for-a-container.
+  readOnlyRootFilesystem: false
+  # -- Learn about this setting at https://kubernetes.io/docs/tasks/configure-pod-container/security-context/#set-the-security-context-for-a-container.
+  privileged: false
+  # -- Learn about this setting at https://kubernetes.io/docs/tasks/configure-pod-container/security-context/#set-the-security-context-for-a-container.
+  allowPrivilegeEscalation: false
+  # -- Learn about this setting at https://kubernetes.io/docs/tasks/configure-pod-container/security-context/#set-the-security-context-for-a-container.
+  runAsUser: 1001
+  # -- Learn about this setting at https://kubernetes.io/docs/tasks/configure-pod-container/security-context/#set-the-security-context-for-a-container.
+  runAsGroup: 1001
+  # -- Learn about this setting at https://kubernetes.io/docs/tasks/configure-pod-container/security-context/#set-capabilities-for-a-container.
+  # The default (recommended) configuration prohibits all Linux capabilities.
+  capabilities:
+    drop:
+      - ALL
+
+# -- Learn about liveness probes at https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/.
+# Learn about the probe's configuration settings at https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/#configure-probes.
+livenessProbe:
+  # -- Defines the delay before the Scaler container liveness probe is initiated.
+  initialDelaySeconds: 10
+  # -- Defines how often to perform the Scaler container probe.
+  periodSeconds: 5
+  # -- Defines when the Scaler container probe times out.
+  timeoutSeconds: 5
+  # -- Defines the minimum consecutive failures for the Scaler container probe to be considered failed after having succeeded.
+  failureThreshold: 5
+  # -- Defines the minimum consecutive successes for the Scaler container probe to be considered successful after having failed.
+  successThreshold: 1
+# -- Learn about readiness probes at https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/.
+# Learn about the probe's configuration settings at https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/#configure-probes.
+readinessProbe:
+  # -- Defines the delay before the Scaler container readiness probe is initiated.
+  initialDelaySeconds: 20
+  # -- Defines how often to perform the Scaler container probe.
+  periodSeconds: 10
+  # -- Defines when the Scaler container probe times out.
+  timeoutSeconds: 5
+  # -- Defines the minimum consecutive failures for the Scaler container probe to be considered failed after having succeeded.
+  failureThreshold: 5
+  # -- Defines the minimum consecutive successes for the Scaler container probe to be considered successful after having failed
+  successThreshold: 1
+
+resources:
+  {}
+  # We usually recommend not to specify default resources and to leave this as a conscious
+  # choice for the user. This also increases chances charts run on environments with little
+  # resources, such as Minikube. If you do want to specify resources, uncomment the following
+  # lines, adjust them as necessary, and remove the curly braces after 'resources:'.
+  # limits:
+  #   cpu: 100m
+  #   memory: 128Mi
+  # requests:
+  #   cpu: 100m
+  #   memory: 128Mi
+
+# This is for setting up a service
+# more information: https://kubernetes.io/docs/concepts/services-networking/service/
+service:
+  annotations: {}
+  # This sets the service type
+  # more information: https://kubernetes.io/docs/concepts/services-networking/service/#publishing-services-service-types
+  type: ClusterIP
+  # This sets the ports
+  # more information: https://kubernetes.io/docs/concepts/services-networking/service/#field-spec-ports
+  port: 5000
+
+# # Sets up the liveness and readiness probes
+# # more information: https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/
+# livenessProbe:
+#   tcpSocket:
+#     port: 5000
+# readinessProbe:
+#   tcpSocket:
+#     port: 5000
+
+# This section is for setting up autoscaling
+# more information: https://kubernetes.io/docs/concepts/workloads/autoscaling/
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 100
+  targetCPUUtilizationPercentage: 80
+  # targetMemoryUtilizationPercentage: 80
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}

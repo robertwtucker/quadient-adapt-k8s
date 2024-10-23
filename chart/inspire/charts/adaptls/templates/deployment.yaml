@@ -1,0 +1,93 @@
+{{- if .Values.global.adapt.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "inspire.applicationName" . }}-adaptls
+  labels:
+    {{- include "inspire.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "inspire.labels" . | nindent 6 }}
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      annotations:
+        {{- with .Values.podAnnotations }}
+        {{- range $key, $value := . }}
+        {{ $key }}: {{ $value | quote }}
+        {{- end }}
+        {{- end }}
+      labels:
+        {{- include "inspire.labels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- range $key, $value := . }}
+        {{ $key }}: {{ $value | quote }}
+        {{- end }}
+        {{- end }}
+      name: {{ include "inspire.applicationName" . }}-adaptls-template
+    spec:
+      {{- if .Values.hostname }}
+      hostname: {{ .Values.hostname }}
+      {{- end }}
+      {{- if .Values.existingServiceAccount }}
+      serviceAccountName: {{ .Values.existingServiceAccount }}
+      {{- else }}
+      serviceAccountName: {{ print (include "inspire.applicationName" .)  "-adaptls" }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                      {{- include "inspire.labels" . | nindent 20}}
+                topologyKey: "kubernetes.io/hostname"
+      {{- if .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+      {{- range .Values.global.imagePullSecrets }}
+      - name: {{ . }}
+      {{- end }}
+      {{- end }}
+      containers:
+      - name: {{ include "inspire.applicationName" . }}-adaptls
+        image: "{{ .Values.image.name }}:{{ .Values.image.tag }}"
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        securityContext:
+          {{- toYaml .Values.securityContext | nindent 10 }}
+        livenessProbe:
+          tcpSocket:
+            port: 5000
+          initialDelaySeconds: {{ .Values.livenessProbe.initialDelaySeconds }}
+          periodSeconds: {{ .Values.livenessProbe.periodSeconds }}
+          timeoutSeconds: {{ .Values.livenessProbe.timeoutSeconds }}
+          failureThreshold: {{ .Values.livenessProbe.failureThreshold }}
+          successThreshold: {{ .Values.livenessProbe.successThreshold }}
+        readinessProbe:
+          tcpSocket:
+            port: 5000
+          initialDelaySeconds: {{ .Values.readinessProbe.initialDelaySeconds }}
+          periodSeconds: {{ .Values.readinessProbe.periodSeconds }}
+          timeoutSeconds: {{ .Values.readinessProbe.timeoutSeconds }}
+          failureThreshold: {{ .Values.readinessProbe.failureThreshold }}
+          successThreshold: {{ .Values.readinessProbe.successThreshold }}
+        resources:
+          {{- toYaml .Values.resources | nindent 10 }}
+        volumeMounts:
+        - name: ls-config
+          mountPath: /opt/adapt/ls/cdplicser.cfg
+          subPath: cdplicser.cfg
+        {{- toYaml .Values.volumeMounts | nindent 8 }}
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      volumes:
+      - name: ls-config
+        configMap:
+          name: {{ include "inspire.applicationName" . }}-adaptls
+      {{- toYaml .Values.volumes | nindent 6 }}
+{{- end }}

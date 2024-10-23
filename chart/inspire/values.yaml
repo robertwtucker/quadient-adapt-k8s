@@ -1,0 +1,145 @@
+global:
+  # -- Defines an array of names of secrets, containing the connection settings to Docker image repositories.
+  imagePullSecrets: []
+  # -- Defines a unique name of an application within a Kubernetes namespace.
+  applicationName: 'inspire'
+
+  license:
+    # -- Defines the type of your license (cloud licensing or net licensing). [CL/LS]
+    method: 'CL'
+    # -- Defines the URL address of your licensing server (Quadient Cloud server or Inspire License Manager server).
+    # Use the 'serverSource' variable instead if you wish to define the URL address using a Secret.
+    server: ''
+    # -- Uses a Secret to define the URL address of your licensing server.
+    serverSource:
+      useSecret: false
+      secretName: ''
+      secretKey: ''
+    # -- Defines the URL address of your backup licensing server (Quadient Cloud server or Inspire License Manager server).
+    # Use the 'server2Source' variable instead if you wish to define URL address using a Secret.
+    server2: ''
+    # -- Uses a Secret to define the URL address of your backup licensing server.
+    server2Source:
+      useSecret: false
+      secretName: ''
+      secretKey: ''
+
+  icm:
+    # -- Defines the password of the ICM admin user.
+    # If left undefined, ICM's deployment will provide you with a random alphanumeric password.
+    # Use the 'adminPassOverrideSource' variable instead if you wish to define the password using a Secret.
+    adminPassOverride: ~
+    # -- Uses a Secret to define the password of the ICM admin user.
+    adminPassOverrideSource:
+      useSecret: false
+      secretName: ''
+      secretKey: ''
+    # -- Defines the port to run ICM on.
+    # If left undefined, the default port 30353 is used.
+    portOverride:
+
+  scaler:
+    # -- Defines whether to deploy Scaler or not.
+    enabled: true
+    # -- Defines (in plain text) the username of a Scaler user to be created in ICM.
+    # If left undefined, the default user called scaler is created.
+    # The username value is not treated as a Secret.
+    userOverride: ~
+    # -- Defines (in plain text) the password of a Scaler user to be created in ICM.
+    # If left undefined, Scaler's deployment will provide you with a random alphanumeric password.
+    # Use the 'passOverrideSource' variable instead if you wish to define the password using a Secret.
+    passOverride: ~
+    # -- Uses a Secret to define the password of a Scaler user to be created in ICM.
+    passOverrideSource:
+      useSecret: false
+      secretName: ''
+      secretKey: ''
+    # -- Defines the port to run Scaler on.
+    # If left undefined, the default port 30600 is used.
+    portOverride:
+
+  dataRecording:
+    # -- Since the R15.0 GA version, this defines whether or not you want to prepare the Inspire Flex components for the use of the Data Recording feature. The value of this setting must be set to 'true' for the Data recording feature to work in Kubernetes.
+    prepareEnvironment: false
+
+  # -- Available since the 15.0 version (except for the 15.2 version) of Scaler.
+  sen:
+    # -- Defines whether to deploy Scenario Engine or not.
+    enabled: false
+    # -- Defines (in plain text) the username of a Scenario Engine user to be created in ICM.
+    # If left undefined, the default user called 'sen' is created.
+    # The username value is not treated as a Secret.
+    userOverride: ''
+    # -- Defines (in plain text) the password of a Scenario Engine user to be created in ICM.
+    # If left undefined, Scaler's deployment will provide you with a random alphanumeric password.
+    # Use the 'passOverrideSource' variable instead if you wish to define the password using a Secret.
+    passOverride: ''
+    # -- Uses a Secret to define the password of a Scenario Engine user to be created in ICM.
+    passOverrideSource:
+      useSecret: false
+      secretName: ''
+      secretKey: ''
+
+  interactive:
+    # -- Defines whether to deploy Interactive or not.
+    enabled: true
+    # -- Defines the username of an Interactive system user to be created in ICM.
+    # If left undefined, the default user called system is created.
+    # The username value is not treated as a Secret.
+    userOverride: ~
+    # -- Defines the password of an Interactive system user to be created in ICM.
+    # If left undefined, Interactive's deployment will provide you with a random alphanumeric password.
+    # Use the 'passOverrideSource' variable instead if you wish to define the password using a Secret.
+    passOverride: ~
+    # -- Uses a Secret to define the password of an Interactive system user to be created in ICM.
+    passOverrideSource:
+      useSecret: false
+      secretName: ''
+      secretKey: ''
+    # -- Defines the port to run Interactive on.
+    # If left undefined, the default port 30701 is used.
+    portOverride:
+
+  automation:
+    # -- Defines whether to deploy Automation or not.
+    enabled: false
+    # -- Defines (in plain text) the username of a Automation user.
+    # -- If left undefined, the default user called automation is created.
+    userOverride: ~
+    # -- Defines (in plain text) the password of a Automation user.
+    # -- If left undefined, Automation's deployment will provide you with a random alphanumeric password.
+    # -- Use the 'passOverrideSource' variable instead if you wish to define the password using a Secret.
+    passOverride: ~
+    # -- Uses a Secret to define the password of an Automation user to be created in ICM.
+    passOverrideSource:
+      useSecret: false
+      secretName: ''
+      secretKey: ''
+    # -- Defines the port to run Automation on.
+    # -- If left undefined, the default port 10140 is used.
+    portOverride:
+
+  adapt:
+    # -- Defines whether to deploy Adapt or not.
+    enabled: true
+    # -- Defines the port to run the Adapt License Server on.
+    # If left undefined, the default port 5000 is used.
+    portOverride:
+    ua:
+      # -- Defines the container image.
+      image:
+        name: adapt/ua
+        tag: latest
+        pullPolicy: IfNotPresent
+      # -- Additional volumes on the Scaler initContainer Deployment definition.
+      volumes: []
+      # - name: ua-license
+      #   secret:
+      #     secretName: ua-license
+      #     optional: false
+      # -- Additional volumeMounts on the Scaler initContainer Deployment definition.
+      volumeMounts: []
+      # - name: ua-license
+      #   mountPath: /opt/adapt/etc/adeptua.lic
+      #   subPath: adeptua.lic
+      #   readOnly: true

@@ -1,0 +1,559 @@
+{{- if and (not .Values.global.scaler.enabled) .Values.global.sen.enabled }}
+{{- fail "Scaler must be enabled if you wish to use Scenario Engine."}}
+{{- end}}
+{{- if .Values.global.scaler.enabled }}
+{{- if and (eq "stateless" (.Values.installationType | trim | lower)) .Values.global.sen.enabled }}
+{{- fail "Running Scenario Engine with Scaler's Stateless installation type is not supported."}}
+{{- end}}
+{{- include "inspire.secret.check" (dict "value" .Values.global.scaler.passOverride "source" .Values.global.scaler.passOverrideSource) }}
+{{- include "inspire.secret.check" (dict "value" .Values.db.pass "source" .Values.db.passSource) }}
+{{- include "inspire.secret.check" (dict "value" .Values.db.user "source" .Values.db.userSource) }}
+{{- include "inspire.secret.check" (dict "value" .Values.db.connectionString "source" .Values.db.connectionStringSource) }}
+{{- include "inspire.secret.check" (dict "value" .Values.sen.db.pass "source" .Values.sen.db.passSource) }}
+{{- include "inspire.secret.check" (dict "value" .Values.sen.db.user "source" .Values.sen.db.userSource) }}
+{{- include "inspire.secret.check" (dict "value" .Values.sen.db.connectionString "source" .Values.sen.db.connectionStringSource) }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "inspire.applicationName" . }}-scaler
+  labels:
+    {{- include "inspire.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "inspire.labels" . | nindent 6 }}
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      annotations:
+        {{- if .Values.customEncryption.enabled }}
+          {{- $areDelegated := eq (include "inspire.secrets.areDelegated" (dict "secrets" .Values.customEncryption.keys "sourceField" "keySource")) "true" }}
+          {{- if not $areDelegated }}
+        checksum/customEncryptionKeys: {{ include (print $.Template.BasePath "/custom-encryption-keys-secret.yaml") . | sha256sum }}
+          {{- end }}
+        {{- end }}
+        checksum/icmTrustedDomains: {{ include (print $.Template.BasePath "/icm-trusted-domains.yaml") . | sha256sum }}
+        {{- with .Values.deployment.annotations }}
+        {{- range $key, $value := . }}
+        {{ $key }}: {{ $value | quote }}
+        {{- end }}
+        {{- end }}
+      labels:
+        {{- include "inspire.labels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- range $key, $value := . }}
+        {{ $key }}: {{ $value | quote }}
+        {{- end }}
+        {{- end }}
+      name: {{ include "inspire.applicationName" . }}-scaler-template
+    spec:
+{{- if .Values.existingServiceAccount }}
+      serviceAccountName: {{ .Values.existingServiceAccount }}
+{{- else if eq "cluster" (.Values.installationType | trim | lower ) }}
+{{- if .Values.autoscaling.enabled | or .Values.statefulScaling.enabled }}
+      serviceAccountName: {{ print (include "inspire.applicationName" .)  "-scaler" }}
+{{- end }}
+{{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                      {{- include "inspire.labels" . | nindent 20}}
+                topologyKey: "kubernetes.io/hostname"
+      {{- if .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+      {{- range .Values.global.imagePullSecrets }}
+      - name: {{ . }}
+      {{- end }}
+      {{- end }}
+      initContainers:
+      {{- if .Values.activateVolumes.enabled }}
+      - name: {{ include "inspire.applicationName" . }}-scaler-volume-activation
+        image: "{{ .Values.image.name }}:{{ .Values.image.tag }}"
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        command:
+          - sh
+          - -c
+          - ls -la /mnt/secrets/
+        securityContext:
+        {{- toYaml .Values.securityContext | nindent 10 }}
+        {{- with .Values.activateVolumes.volumes }}
+        volumeMounts:
+          {{- range $index, $value := . }}
+          - name: {{ required "A volume name is required" $value.name }}
+            mountPath: {{ printf "/mnt/secrets/%s" $value.name }}
+        {{- end }}
+      {{- end }}
+      {{- end }}
+      - name: {{ include "inspire.applicationName" . }}-scaler-icm-wait
+        image: "{{ .Values.image.name }}:{{ .Values.image.tag }}"
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        securityContext:
+          {{- toYaml .Values.securityContext | nindent 10 }}
+        env:
+          {{- include "scaler.env.icm" . | nindent 10 }}
+        command: ['sh', '-c', 'for i in {1..150}; do if $(timeout 4 bash -c "cat < /dev/null > /dev/tcp/$ICM_HOST/$ICM_PORT"); then echo OK && exit 0; else echo ICM not available yet; fi; done; echo ICM service availability timed-out && exit 1']
+      {{- if .Values.useLibExtSidecar }}
+      - name: {{ include "inspire.applicationName" . }}-scaler-lib-ext-sidecar
+        image: "{{ .Values.libExtSidecar.image.name }}:{{ .Values.libExtSidecar.image.tag }}"
+        imagePullPolicy: {{ .Values.libExtSidecar.image.pullPolicy }}
+        securityContext:
+          {{- toYaml .Values.securityContext | nindent 10 }}
+        volumeMounts:
+        - name: lib-ext-sidecar
+          mountPath: /opt/Quadient/Inspire-Scaler/lib-ext
+      {{- end }}
+      {{- if .Values.global.adapt.enabled }}
+      - name: {{ include "inspire.applicationName" . }}-deploy-ua
+        image: "{{ .Values.global.adapt.ua.image.name }}:{{ .Values.global.adapt.ua.image.tag }}"
+        imagePullPolicy: {{ .Values.global.adapt.ua.image.pullPolicy }}
+        args: [share]
+        env:
+          - name: DEBUG
+            value: "true"
+        volumeMounts:
+          - name: ua-share
+            mountPath: /opt/adapt/shared
+        {{- with .Values.global.adapt.ua.volumeMounts }}
+        {{- toYaml . | nindent 10 }}
+        {{- end }}
+      {{- end }}
+      - name: {{ include "inspire.applicationName" . }}-scaler-init
+        image: "{{ .Values.image.name }}:{{ .Values.image.tag }}"
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        securityContext:
+          {{- toYaml .Values.securityContext | nindent 10 }}
+        command: [/bin/sh]
+        args: [/opt/installScripts/initScript.sh]
+        env:
+        {{- with .Values.customEnvs }}
+        {{- range $key, $value := . }}
+        - name: {{ $key }}
+          value: {{ $value | quote }}
+        {{- end }}
+        {{- end }}
+          {{- include "scaler.env.icm" . | nindent 8 }}
+          {{- include "scaler.env.database" . | nindent 8 }}
+        - name: TYPE
+          value: prepare
+        - name: ICM_API_AUTHENTICATION_GROUP
+          value: {{ .Values.icmApiAuthenticationGroup }}
+        - name: INSTALLATION_TYPE
+          value: {{ include "scaler.installationType" . }}
+        - name: METRICS_API_ENABLED
+          value: {{ .Values.metricsAPI.enabled | quote }}
+          {{- if eq "stateless" (.Values.installationType | trim | lower ) }}
+        - name: CLUSTER_BACKUP_COUNT
+          value: "0"
+          {{- else if .Values.autoscaling.enabled }}
+        - name: CLUSTER_BACKUP_COUNT
+          value: {{ .Values.cluster.backupCount | default (include "computeBackupCount" (dict "replicas" .Values.autoscaling.maxReplicas)) | quote }}
+          {{- else }}
+        - name: CLUSTER_BACKUP_COUNT
+          value: {{ .Values.cluster.backupCount | default (include "computeBackupCount" (dict "replicas" .Values.replicaCount)) | quote }}
+          {{- end }}
+        - name: USE_CUSTOM_ENCRYPTION
+          value: {{ .Values.customEncryption.enabled | quote }}
+          {{- $firstEncryptionKey := (first .Values.customEncryption.keys) }}
+          {{- if and .Values.customEncryption.enabled $firstEncryptionKey }}
+          {{- $customEncryptionPointer := dict "source" $firstEncryptionKey.keySource "mountPath" "/opt/Quadient/secrets/customEncryptionKeys" "envFileName" "CUSTOM_ENCRYPTION_KEYS_DIR" "mountAll" true -}}
+          {{- include "inspire.secret.asFilePointer" $customEncryptionPointer | nindent 8 }}
+          {{- end }}
+        - name: ICM_TRUSTED_DOMAINS_FILE
+          value: /opt/Quadient/trustedDomains/icmTrustedDomains
+        volumeMounts:
+          {{- if .Values.useLibExtSidecar }}
+          - name: lib-ext-sidecar
+            mountPath: /opt/InspireScalerInstaller/lib-ext
+          {{- end }}
+          - name: scaler-temp
+            mountPath: /opt/Quadient/Inspire-Scaler/temp
+          - name: scaler-icm-cache
+            mountPath: /opt/Quadient/Inspire-Scaler/icm/internal
+          - name: scaler-tmp
+            mountPath: /tmp
+          - name: scaler-chimenix
+            mountPath: /etc/Chimenix
+          - name: scaler-internals-runtime
+            mountPath: /opt/Quadient/Inspire-Scaler/internals/runtime
+          - name: scaler-config-dir
+            mountPath: /opt/Quadient/Inspire-Scaler/config
+          - name: scaler-installer-temp
+            mountPath: "/opt/InspireScalerInstaller/temp/"
+          {{- if and .Values.customEncryption.enabled $firstEncryptionKey }}
+          {{- $customEncryptionPointer := dict "source" $firstEncryptionKey.keySource "volumeName" "custom-encryption-keys" "mountPath" "/opt/Quadient/secrets/customEncryptionKeys" "withoutSubpath" true -}}
+          {{- include "inspire.secret.asMount" $customEncryptionPointer | nindent 10 }}
+          {{- end }}
+          - name: icm-trusted-domains
+            mountPath: /opt/Quadient/trustedDomains
+      containers:
+      - name: {{ include "inspire.applicationName" . }}-scaler
+        image: "{{ .Values.image.name }}:{{ .Values.image.tag }}"
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        securityContext:
+          {{- toYaml .Values.securityContext | nindent 10 }}
+        env:
+        {{- with .Values.customEnvs }}
+        {{- range $key, $value := . }}
+        - name: {{ $key }}
+          value: {{ $value | quote }}
+        {{- end }}
+        {{- end }}
+        - name: TYPE
+          value: run
+        {{- include "scaler.env.dataRecording" . | nindent 8 }}
+{{- if .Values.global.sen.enabled }}
+        - name: SEN_PORT
+          value: "30900"
+        - name: SEN_AUTHORIZATION_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "inspire.applicationName" . }}-scaler-authorization-token
+              key: senAuthorizationToken
+{{- end }}
+        - name: KUBERNETES_DEPLOYMENT_NAME
+          value: {{ include "inspire.applicationName" . }}-scaler
+        - name: KUBERNETES_NAMESPACE_NAME
+          value: {{ .Release.Namespace }}
+{{- if eq "cluster" (.Values.installationType | trim | lower ) }}
+{{- if .Values.autoscaling.enabled | or .Values.statefulScaling.enabled }}
+        - name: KUBERNETES_STATEFUL_SCALING
+          value: "true"
+{{- end }}
+{{- end }}
+        - name: SHUTDOWN_TIMEOUT
+          value: {{ .Values.shutdownTimeout | quote }}
+        - name: SCALER_ADDITIONAL_JVM_ARGS
+          value: {{ .Values.addJvmArguments | quote }}
+        - name: INSTALLATION_TYPE
+          value: {{ include "scaler.installationType" . }}
+        {{- include "inspire.env.license" . | nindent 8 }}
+        {{- include "scaler.env.icm" . | nindent 8 }}
+        {{- include "scaler.env.database" . | nindent 8 }}
+        - name: USE_CUSTOM_ENCRYPTION
+          value: {{ .Values.customEncryption.enabled | quote }}
+        {{- if and .Values.customEncryption.enabled $firstEncryptionKey }}
+        {{- $customEncryptionPointer := dict "source" $firstEncryptionKey.keySource "mountPath" "/opt/Quadient/secrets/customEncryptionKeys" "envFileName" "CUSTOM_ENCRYPTION_KEYS_DIR" "mountAll" true -}}
+        {{- include "inspire.secret.asFilePointer" $customEncryptionPointer | nindent 8 }}
+        {{- end }}
+        - name: ICM_TRUSTED_DOMAINS_FILE
+          value: /opt/Quadient/trustedDomains/icmTrustedDomains
+        {{- include "scaler.env.saml" . | nindent 8 }}
+        livenessProbe:
+          tcpSocket:
+            port: 30600
+          initialDelaySeconds: {{ .Values.livenessProbe.initialDelaySeconds }}
+          periodSeconds: {{ .Values.livenessProbe.periodSeconds }}
+          timeoutSeconds: {{ .Values.livenessProbe.timeoutSeconds }}
+          failureThreshold: {{ .Values.livenessProbe.failureThreshold }}
+          successThreshold: {{ .Values.livenessProbe.successThreshold }}
+        readinessProbe:
+          httpGet:
+            path: /rest/web/system-healthy/healthy-and-http-workflows-running
+            port: 30600
+            scheme: HTTP
+          initialDelaySeconds: {{ .Values.readinessProbe.initialDelaySeconds }}
+          periodSeconds: {{ .Values.readinessProbe.periodSeconds }}
+          timeoutSeconds: {{ .Values.readinessProbe.timeoutSeconds }}
+          failureThreshold: {{ .Values.readinessProbe.failureThreshold }}
+          successThreshold: {{ .Values.readinessProbe.successThreshold }}
+        resources:
+          {{- toYaml .Values.resources | nindent 10 }}
+        volumeMounts:
+          {{- if .Values.useLibExtSidecar }}
+          - name: lib-ext-sidecar
+            mountPath: /opt/Quadient/Inspire-Scaler/lib-ext
+          {{- end }}
+          {{- if .Values.global.adapt.enabled }}
+          - name: ua-share
+            mountPath: /opt/adapt/ua
+          {{- end }}
+          - name: local-storage
+            mountPath: /opt/localStorage
+          - name: shared-storage
+            mountPath: /opt/scalerSharedFolder
+          - name: scaler-temp
+            mountPath: /opt/Quadient/Inspire-Scaler/temp
+          - name: scaler-icm-cache
+            mountPath: /opt/Quadient/Inspire-Scaler/icm/internal
+          - name: scaler-icm-external-cache
+            mountPath: /opt/Quadient/Inspire-Scaler/icm/external
+          - name: scaler-tmp
+            mountPath: /tmp
+          - name: scaler-chimenix
+            mountPath: /etc/Chimenix
+          - name: scaler-internals-runtime
+            mountPath: /opt/Quadient/Inspire-Scaler/internals/runtime
+          - name: scaler-config-dir
+            mountPath: /opt/Quadient/Inspire-Scaler/config
+          {{- if or .Values.customLoggerConfigContent .Values.customLoggerConfigCM }}
+          - name: scaler-custom-logger-config
+            mountPath: /opt/Quadient/Inspire-Scaler/config/additional-custom-logger
+          {{- end }}
+          {{- if and .Values.customEncryption.enabled $firstEncryptionKey }}
+          {{- $customEncryptionPointer := dict "source" $firstEncryptionKey.keySource "volumeName" "custom-encryption-keys" "mountPath" "/opt/Quadient/secrets/customEncryptionKeys" "withoutSubpath" true -}}
+          {{- include "inspire.secret.asMount" $customEncryptionPointer | nindent 10 }}
+          {{- end }}
+          - name: icm-trusted-domains
+            mountPath: /opt/Quadient/trustedDomains
+          {{- if .Values.authentication.saml2.enabled }}
+          {{- $samlKeystorePointer := dict "source" $.Values.authentication.saml2.keystoreSource "volumeName" "saml-keystore-file" "secretKey" "keystore" "mountPath" "/opt/Quadient/secrets/saml" "withoutSubpath" false }}
+          {{- include "inspire.secret.asMount" $samlKeystorePointer | nindent 10 }}
+          {{- end }}
+{{- if .Values.additionalStorage.enabled }}
+          - name: additional-storage
+            mountPath: {{ .Values.additionalStorage.mountPath }}
+{{- end }}
+      - name: {{ include "inspire.applicationName" . }}-scaler-ips
+        image: "{{ .Values.image.ips.name }}:{{ .Values.image.ips.tag }}"
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        securityContext:
+              {{- toYaml .Values.securityContext | nindent 10 }}
+        env:
+        {{- with .Values.ips.customEnvs }}
+        {{- range $key, $value := . }}
+        - name: {{ $key }}
+          value: {{ $value | quote }}
+        {{- end }}
+        {{- end }}
+          {{- include "inspire.env.license" . | nindent 8 }}
+          {{- include "inspire.secret.asFilePointer" (dict "source" .Values.global.scaler.passOverrideSource "envFileName" "SCALER_PASS_FILE" "mountPath" "/opt/Quadient/secrets/scaler" "secretKey" "pass") | nindent 8 }}
+        - name: CX_PARAMS
+          value: {{ printf "-icmaddress %s -icmuser %s -icmpasswordpath %s" (printf "%s:%s" ( include "inspire.env.icm.host" . ) ( include "inspire.env.icm.port" . )) (include "inspire.scaler.env.icm.user" .) "$(SCALER_PASS_FILE)" }}
+        - name: THREAD_COUNT
+          value: {{ .Values.ips.threadcount | quote}}
+        - name: ADD_PARAMS
+          value: "-waitingtime 15 {{ .Values.ips.addParams }}"
+        ports:
+        - containerPort: 30354
+          protocol: TCP
+        livenessProbe:
+          tcpSocket:
+            port: 30354
+          initialDelaySeconds: {{ .Values.ips.livenessProbe.initialDelaySeconds }}
+          periodSeconds: {{ .Values.ips.livenessProbe.periodSeconds }}
+          timeoutSeconds: {{ .Values.ips.livenessProbe.timeoutSeconds }}
+          failureThreshold: {{ .Values.ips.livenessProbe.failureThreshold }}
+          successThreshold: {{ .Values.ips.livenessProbe.successThreshold }}
+        readinessProbe:
+          exec:
+            command:
+            - "/opt/Quadient/Designer/InspirePSCLI"
+            - "-api"
+            - "ping"
+          initialDelaySeconds: {{ .Values.ips.readinessProbe.initialDelaySeconds }}
+          periodSeconds: {{ .Values.ips.readinessProbe.periodSeconds }}
+          timeoutSeconds: {{ .Values.ips.readinessProbe.timeoutSeconds }}
+          failureThreshold: {{ .Values.ips.readinessProbe.failureThreshold }}
+          successThreshold: {{ .Values.ips.readinessProbe.successThreshold }}
+        resources:
+          {{- toYaml .Values.ips.resources | nindent 10 }}
+        volumeMounts:
+        - name: ips-tmp
+          mountPath: /tmp
+        - name: ips-chimenix
+          mountPath: /etc/Chimenix
+        - name: local-storage
+          mountPath: /opt/localStorage
+        - name: shared-storage
+          mountPath: /opt/scalerSharedFolder
+        - name: scaler-temp
+          mountPath: /opt/Quadient/Inspire-Scaler/temp
+        - name: ips-home
+          mountPath: /home/quadient/.quadient
+        - name: ips-data
+          mountPath: /opt/Quadient/Inspire-Designer-data/ips
+        - name: ips-icmcache
+          mountPath: /opt/Quadient/Inspire-Designer-data/ips-icmcache
+        - name: ips-config-volume
+          mountPath: /opt/Quadient/Designer/InspireProductionServer.config
+          subPath: InspireProductionServer.config
+          {{- include "inspire.secret.asMount" (dict "source" .Values.global.scaler.passOverrideSource "volumeName" "icm-scaler-password" "secretKey" "pass" "mountPath" "/opt/Quadient/secrets/scaler" "withoutSubpath" false ) | nindent 8 }}
+{{- if .Values.additionalStorage.enabled }}
+        - name: additional-storage
+          mountPath: {{ .Values.additionalStorage.mountPath }}
+{{- end }}
+        terminationMessagePath: /dev/termination-log
+        lifecycle:
+          preStop:
+            exec:
+              command: [ "/bin/sh", "-c", "while curl --insecure localhost:30610/healthcheck > /dev/null 2>&1 ; do sleep 3; done" ]
+{{- if .Values.global.sen.enabled }}
+      - name: {{ include "inspire.applicationName" . }}-scaler-sen
+        image: "{{ .Values.image.sen.name }}:{{ .Values.image.sen.tag }}"
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        securityContext:
+          {{- toYaml .Values.securityContext | nindent 10 }}
+        resources:
+          {{- toYaml .Values.sen.resources | nindent 10 }}
+        env:
+        {{- with .Values.sen.customEnvs }}
+        {{- range $key, $value := . }}
+        - name: {{ $key }}
+          value: {{ $value | quote }}
+        {{- end }}
+        {{- end }}
+          {{- include "inspire.env.license" . | nindent 8 }}
+          {{- include "scaler.env.icm" . | nindent 8 }}
+        - name: ICM_PASSWORD
+          value: $(ICM_PASS)
+          {{- include "scaler.env.sen" . | nindent 8 }}
+        - name: SERVER_PORT
+          value: "30900"
+        - name: SEN_MAX_PARALLEL_BATCH_COUNT
+          value: {{ .Values.sen.maxParallelBatchCount | quote }}
+        - name: SEN_RETENTION_PERIOD_IN_DAYS
+          value: {{ .Values.sen.retentionPeriodInDays | quote }}
+        - name: JDK_JAVA_OPTIONS
+          value: {{ .Values.sen.addJvmArguments | quote }}
+        - name: ICM_TRUSTED_DOMAIN
+          value: {{ .Values.sen.icmTrustedDomain | quote }}
+        - name: SCALER_PORT
+          value: "30600"
+        - name: SCALER_HTTPS
+          value: "false"
+        - name: SEN_PREPARE_RESOURCES
+          value: "true"
+        - name: SEN_MAX_SHUTDOWN_WAIT_TIME_IN_SECONDS
+          value: {{ .Values.shutdownTimeout | add 5 | quote }}
+        - name: SPRING_MAIN_BANNER-MODE
+          value: "off"
+        startupProbe:
+          tcpSocket:
+            port: 30900
+          periodSeconds: {{ .Values.sen.startupProbe.periodSeconds }}
+          timeoutSeconds: {{ .Values.sen.startupProbe.timeoutSeconds }}
+          failureThreshold: {{ .Values.sen.startupProbe.failureThreshold }}
+          successThreshold: {{ .Values.sen.startupProbe.successThreshold }}
+        livenessProbe:
+          tcpSocket:
+            port: 30900
+          periodSeconds: {{ .Values.sen.livenessProbe.periodSeconds }}
+          timeoutSeconds: {{ .Values.sen.livenessProbe.timeoutSeconds }}
+          failureThreshold: {{ .Values.sen.livenessProbe.failureThreshold }}
+          successThreshold: {{ .Values.sen.livenessProbe.successThreshold }}
+        readinessProbe:
+          httpGet:
+            path: /api/v1/health-check
+            port: 30900
+            scheme: HTTP
+          initialDelaySeconds: {{ .Values.sen.readinessProbe.initialDelaySeconds }}
+          periodSeconds: {{ .Values.sen.readinessProbe.periodSeconds }}
+          timeoutSeconds: {{ .Values.sen.readinessProbe.timeoutSeconds }}
+          failureThreshold: {{ .Values.sen.readinessProbe.failureThreshold }}
+          successThreshold: {{ .Values.sen.readinessProbe.successThreshold }}
+        volumeMounts:
+        - name: sen-internals-runtime
+          mountPath: /opt/Quadient/Scenario-Engine/internals/runtime
+        - name: sen-temp
+          mountPath: /tmp
+        - name: sen-icm-cache
+          mountPath: /opt/Quadient/Scenario-Engine/icm/internal
+        {{- if or .Values.sen.customLoggerConfigContent .Values.sen.customLoggerConfigCM }}
+        - name: sen-custom-logger-config
+          mountPath: /opt/Quadient/Scenario-Engine/config/custom-logger
+        {{- end }}
+{{- end }}
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      terminationGracePeriodSeconds: {{ .Values.shutdownTimeout | add 15 }}
+      volumes:
+      {{- if .Values.useLibExtSidecar }}
+      - name: lib-ext-sidecar
+        emptyDir: {}
+      {{- end }}
+      {{- if .Values.global.adapt.enabled }}
+      - name: ua-share
+        emptyDir: {}
+      {{- toYaml .Values.global.adapt.ua.volumes | nindent 6 }}
+      {{- end }}
+{{- $volumeCandidates := list }}
+{{- $applicationName := (include "inspire.applicationName" .) }}
+{{- if .Values.customEncryption.enabled }}
+  {{- range $index, $value := .Values.customEncryption.keys }}
+    {{- $keyDefinition := (dict "value" (get $value "key") "source" (get $value "keySource") "volumeName" "custom-encryption-keys" "secretName" (printf "%s-scaler-custom-encryption-keys" $applicationName)) }}
+    {{- if (get $value "keySource") }}
+      {{- include "inspire.secret.check" $keyDefinition }}
+    {{- end }}
+    {{- $volumeCandidates = append $volumeCandidates $keyDefinition }}
+  {{- end }}
+  {{- include "inspire.secret.checkUniqueSource" (dict "secrets" .Values.customEncryption.keys "sourceField" "keySource") }}
+{{- end }}
+{{- $volumeCandidates = append $volumeCandidates (dict "value" .Values.global.scaler.passOverride "source" .Values.global.scaler.passOverrideSource "volumeName" "icm-scaler-password" "secretName" (printf "%s-scaler-icm" $applicationName) )}}
+{{- if .Values.authentication.saml2.enabled }}
+{{- $volumeCandidates = append $volumeCandidates (dict "value" .Values.authentication.saml2.keystore "source" .Values.authentication.saml2.keystoreSource "volumeName" "saml-keystore-file" "secretName" (printf "%s-scaler-saml" $applicationName) )}}
+{{- end }}
+{{- include "inspire.secret.uniqueVolumes" $volumeCandidates | nindent 6 }}
+{{- with .Values.volumes }}
+{{ tpl (toYaml .) $ | indent 6 }}
+{{- end }}
+      - name: local-storage
+        emptyDir: {}
+      - name: shared-storage
+{{- if eq "cluster" (.Values.installationType | trim | lower ) }}
+        persistentVolumeClaim:
+          claimName: {{ .Values.sharedStorage.existingClaim | default (print (include "inspire.applicationName" .)  "-scaler-shared-storage") }}
+{{- else }}
+        emptyDir: {}
+{{- end }}
+{{- if .Values.additionalStorage.enabled }}
+      - name: additional-storage
+        persistentVolumeClaim:
+          claimName: {{ .Values.additionalStorage.existingClaim | default (print (include "inspire.applicationName" .)  "-scaler-additional-storage") }}
+{{- end }}
+      - name: ips-data
+        emptyDir: {}
+      - name: ips-icmcache
+        emptyDir: {}
+      - name: ips-home
+        emptyDir: {}
+      - name: ips-tmp
+        emptyDir: {}
+      - name: ips-chimenix
+        emptyDir: {}
+      - name: sen-internals-runtime
+        emptyDir: {}
+      - name: sen-icm-cache
+        emptyDir: {}
+      - name: sen-temp
+        emptyDir: {}
+      {{- if or .Values.sen.customLoggerConfigContent .Values.sen.customLoggerConfigCM }}
+      - name: sen-custom-logger-config
+        configMap:
+          name: {{ include "getSenCustomLoggerConfigCM" . }}
+      {{- end }}
+      - name: scaler-temp
+        emptyDir: {}
+      - name: scaler-icm-cache
+        emptyDir: {}
+      - name: scaler-icm-external-cache
+        emptyDir: {}
+      - name: scaler-tmp
+        emptyDir: {}
+      - name: scaler-chimenix
+        emptyDir: {}
+      - name: scaler-internals-runtime
+        emptyDir: {}
+      - name: scaler-config-dir
+        emptyDir: {}
+      - name: scaler-installer-temp
+        emptyDir: {}
+      {{- if or .Values.customLoggerConfigContent .Values.customLoggerConfigCM }}
+      - name: scaler-custom-logger-config
+        configMap:
+          name: {{ include "getCustomLoggerConfigCM" . }}
+      {{- end }}
+      - name: ips-config-volume
+        configMap:
+          name: {{ include "inspire.applicationName" . }}-scaler-ips-config
+      - name: icm-trusted-domains
+        configMap:
+          name: {{ include "inspire.applicationName" . }}-scaler-icm-trusted-domains
+{{- end }}

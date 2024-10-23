@@ -1,0 +1,14 @@
+{{- if .Values.global.adapt.enabled }}
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: {{ include "inspire.applicationName" . }}-adaptls
+  labels:
+    {{- include "adapt.labels" . | nindent 4 }}
+data:
+  cdplicser.cfg: |
+    [SETTINGS]
+    LISTEN_PORT=5000
+    LICENSE_FILE={{ .Values.licenseFile }}
+    LOG_FILE={{ .Values.logFile }}
+{{- end }}
