@@ -24,7 +24,7 @@ RUN ln -sf ${ADAPT_PATH}/cdplicenseserver64_1.21.0.323_ ${ADAPT_PATH}/ls && \
     chown -R ${USER_ID}:${GROUP_ID} /var/log/adapt /var/run/adapt && \
     chmod +x /usr/local/bin/entrypoint.sh
 
-EXPOSE 5000
+EXPOSE 5000 51984/udp
 WORKDIR ${ADAPT_PATH}/ls
 USER ${USER_ID}
 
