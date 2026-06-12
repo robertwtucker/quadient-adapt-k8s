@@ -120,7 +120,7 @@ spec:
             value: "true"
         volumeMounts:
           - name: ua-share
-            mountPath: /opt/adapt/shared
+            mountPath: /opt/adapt/share
         {{- with .Values.global.adapt.ua.volumeMounts }}
         {{- toYaml . | nindent 10 }}
         {{- end }}
