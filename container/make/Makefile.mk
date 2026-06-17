@@ -20,6 +20,11 @@ NAME=$(shell basename $(CURDIR))
 RELEASE_SUPPORT := $(shell dirname $(abspath $(lastword $(MAKEFILE_LIST))))/.make-release-support
 IMAGE=$(REGISTRY_HOST)/$(USERNAME)/$(NAME)
 
+# Pin all builds to linux/amd64 — the Adapt binaries are x86_64 RHEL-only
+# and do not support ARM. On ARM hosts (Apple Silicon), Docker Desktop's
+# buildkit handles the cross-platform build via QEMU.
+DOCKER_BUILD_ARGS ?= --platform linux/amd64
+
 
 VERSION=$(shell . $(RELEASE_SUPPORT) ; getVersion)
 BASE_RELEASE=$(shell . $(RELEASE_SUPPORT) ; getRelease)
