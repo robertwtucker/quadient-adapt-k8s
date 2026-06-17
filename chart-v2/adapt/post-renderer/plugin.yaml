@@ -1,0 +1,8 @@
+apiVersion: v1
+type: postrenderer/v1
+name: adapt-scaler-inject
+version: 1.0.0
+runtime: subprocess
+runtimeConfig:
+  platformCommand:
+    - command: ${HELM_PLUGIN_DIR}/kustomize-post.sh

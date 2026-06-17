@@ -1,0 +1,207 @@
+# CI fixture: representative production-shaped values for the adapt chart.
+# Used by spt-charts' ci.yml to verify the chart renders under realistic
+# configuration via `helm template + kubeconform + KinD dry-run`.
+#
+# NOT a deployable values file:
+#   - License content below is placeholder (validates the Secret-render
+#     path; the placeholders won't pass real adapt license validation)
+#   - Inspire image tags (17.0-latest) are placeholders; demo installs
+#     need real GA/FMAP tags
+#   - References Secrets (spt-secrets, postgresql) and PVCs
+#     (example-shared-storage) that don't exist in the CI cluster — but
+#     `helm template` doesn't validate Secret/PVC existence, only that
+#     the rendered manifests reference them correctly
+
+# === Adapt-side ===
+
+licenseServer:
+  # Placeholder LS license content (base64-encoded — the chart's Secret
+  # uses K8s `data:` because real Adapt licenses are binary). Exercises
+  # the chart-managed Secret render path. Real installs encode at
+  # invocation time:
+  #   --set licenseServer.license=$(base64 -i ./LicSer.lic | tr -d '\n')
+  # This placeholder decodes to "[DEMO-LICENSE]\nplaceholder=true\n".
+  license: "W0RFTU8tTElDRU5TRV0KcGxhY2Vob2xkZXI9dHJ1ZQo="
+
+ua:
+  # Placeholder UA license content (base64-encoded; same rationale as
+  # licenseServer.license above). Decodes to
+  # "[ADEPTUA-DEMO]\nplaceholder=true\n".
+  license: "W0FERVBUVUEtREVNT10KcGxhY2Vob2xkZXI9dHJ1ZQo="
+
+# === Inspire integration ===
+
+inspire:
+  enabled: true
+  global:
+    imagePullSecrets:
+      - spt-registry
+    applicationName: "inspire"
+    icm:
+      adminPassOverrideSource:
+        useSecret: true
+        secretName: "spt-secrets"
+        secretKey: "admin-pass"
+    scaler:
+      enabled: true
+      passOverrideSource:
+        useSecret: true
+        secretName: "spt-secrets"
+        secretKey: "admin-pass"
+    interactive:
+      enabled: true
+      passOverrideSource:
+        useSecret: true
+        secretName: "spt-secrets"
+        secretKey: "admin-pass"
+    sen:
+      enabled: false
+      passOverrideSource:
+        useSecret: true
+        secretName: "spt-secrets"
+        secretKey: "admin-pass"
+    license:
+      method: "CL"
+      serverSource:
+        useSecret: true
+        secretName: "spt-secrets"
+        secretKey: "license-server"
+    dataRecording:
+      prepareEnvironment: false
+
+  icm:
+    image:
+      name: "quadientdistribution.azurecr.io/flex/icm"
+      tag: "17.0-latest"
+    db:
+      host: "inspire-db-postgresql-hl"
+      port: "5432"
+      userSource:
+        useSecret: true
+        secretName: "postgresql"
+        secretKey: "postgres-user"
+      passSource:
+        useSecret: true
+        secretName: "postgresql"
+        secretKey: "postgres-password"
+      name: "icm"
+      type: "PostgreSql"
+    useInitialServerSettings: true
+    initialServerSettings:
+      packageImportExport:
+        overwriteExistingUsersOnImport: false
+        overwriteExistingGroupsAndSyncPointsOnImport: false
+        overwriteExistingApprovalStatesOnImport: false
+        overwriteServerPropertiesOnImport: false
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits: {}
+
+  scaler:
+    installationType: Cluster
+    addJvmArguments: "-XX:MaxRAMPercentage=75.0"
+    livenessProbe:
+      initialDelaySeconds: 240
+    image:
+      name: "quadientdistribution.azurecr.io/flex/scaler"
+      tag: "17.0-latest"
+      ips:
+        name: "quadientdistribution.azurecr.io/flex/ips"
+        tag: "17.0-latest"
+      sen:
+        name: "quadientdistribution.azurecr.io/flex/scenario-engine"
+        tag: "17.0-latest"
+    db:
+      host: "inspire-db-postgresql-hl"
+      port: "5432"
+      userSource:
+        useSecret: true
+        secretName: "postgresql"
+        secretKey: "postgres-user"
+      passSource:
+        useSecret: true
+        secretName: "postgresql"
+        secretKey: "postgres-password"
+      name: "scaler"
+      type: "PostgreSql"
+    sharedStorage:
+      size: 2Gi
+      existingClaim: "example-shared-storage"
+    additionalStorage:
+      enabled: false
+      existingClaim: ""
+    customLoggerConfigCM: example-logger-config
+    resources:
+      requests:
+        cpu: 250m
+        memory: 1Gi
+      limits:
+        cpu: "1500m"
+        memory: 3Gi
+    ips:
+      resources:
+        requests:
+          cpu: 150m
+          memory: 256Mi
+        limits:
+          cpu: "500m"
+    sen:
+      resources:
+        requests:
+          cpu: 150m
+          memory: 1Gi
+        limits: {}
+      db:
+        connectionString: "jdbc:postgresql://inspire-db-postgresql-hl:5432/scenario"
+        userSource:
+          useSecret: true
+          secretName: "postgresql"
+          secretKey: "postgres-user"
+        passSource:
+          useSecret: true
+          secretName: "postgresql"
+          secretKey: "postgres-password"
+
+  interactive:
+    addJvmArguments: "-XX:MaxRAMPercentage=75.0"
+    livenessProbe:
+      initialDelaySeconds: 120
+    image:
+      name: "quadientdistribution.azurecr.io/flex/interactive"
+      tag: "17.0-latest"
+      ips:
+        name: "quadientdistribution.azurecr.io/flex/ips"
+        tag: "17.0-latest"
+    db:
+      host: "inspire-db-postgresql-hl"
+      port: "5432"
+      userSource:
+        useSecret: true
+        secretName: "postgresql"
+        secretKey: "postgres-user"
+      passSource:
+        useSecret: true
+        secretName: "postgresql"
+        secretKey: "postgres-password"
+      name: "interactive"
+      type: "PostgreSql"
+    resources:
+      requests:
+        cpu: 250m
+        memory: 2Gi
+      limits:
+        cpu: "1500m"
+        memory: 3Gi
+    productionEnvironment: false
+    ips:
+      resources:
+        requests:
+          cpu: 100m
+          memory: 256Mi
+        limits:
+          cpu: "500m"
+    fulltext:
+      enabled: false
+      host: "http://inspire-es-elasticsearch:9200"

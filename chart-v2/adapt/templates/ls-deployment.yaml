@@ -1,0 +1,90 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "adapt.licenseServer.fullname" . }}
+  labels:
+    {{- include "adapt.licenseServer.labels" . | nindent 4 }}
+spec:
+  # LS is single-replica by license design (the Adapt license file is keyed
+  # to a single hostname; multiple Pods sharing the license is not a
+  # supported runtime configuration).
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "adapt.licenseServer.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.licenseServer.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "adapt.licenseServer.labels" . | nindent 8 }}
+        {{- with .Values.licenseServer.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.licenseServer.hostname }}
+      hostname: {{ . }}
+      {{- end }}
+      serviceAccountName: {{ include "adapt.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.licenseServer.podSecurityContext | nindent 8 }}
+      containers:
+        - name: license-server
+          image: {{ include "adapt.licenseServer.image" . }}
+          imagePullPolicy: {{ .Values.licenseServer.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.licenseServer.securityContext | nindent 12 }}
+          ports:
+            - name: daemon
+              containerPort: 5000
+              protocol: TCP
+          livenessProbe:
+            {{- toYaml .Values.licenseServer.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.licenseServer.readinessProbe | nindent 12 }}
+          resources:
+            {{- toYaml .Values.licenseServer.resources | nindent 12 }}
+          volumeMounts:
+            - name: ls-config
+              mountPath: /opt/adapt/etc/cdplicser.cfg
+              subPath: cdplicser.cfg
+              readOnly: true
+            {{- if .Values.licenseServer.license }}
+            - name: ls-license
+              mountPath: {{ .Values.licenseServer.licenseFile }}
+              subPath: LicSer.lic
+              readOnly: true
+            {{- end }}
+            {{- with .Values.licenseServer.volumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+      volumes:
+        - name: ls-config
+          configMap:
+            name: {{ include "adapt.licenseServer.configMapName" . }}
+        {{- if .Values.licenseServer.license }}
+        - name: ls-license
+          secret:
+            secretName: {{ include "adapt.licenseServer.licenseSecretName" . }}
+        {{- end }}
+        {{- with .Values.licenseServer.volumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.licenseServer.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.licenseServer.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.licenseServer.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

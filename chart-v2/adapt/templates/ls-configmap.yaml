@@ -1,0 +1,25 @@
+{{- /*
+Chart-managed cdplicser.cfg ConfigMap.
+
+Always renders. Auto-mounted by the LS Deployment at
+/opt/adapt/etc/cdplicser.cfg (subPath mount, file-level).
+
+LISTEN_PORT is hardcoded to 5000 — the daemon's container-internal bind
+port — and is decoupled from .Values.licenseServer.service.port (the
+K8s Service's external port, which routes via targetPort: daemon).
+
+LICENSE_FILE and LOG_FILE paths inside the container are values-driven so
+the consumer can relocate them if needed.
+*/}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "adapt.licenseServer.configMapName" . }}
+  labels:
+    {{- include "adapt.licenseServer.labels" . | nindent 4 }}
+data:
+  cdplicser.cfg: |-
+    [SETTINGS]
+    LISTEN_PORT=5000
+    LICENSE_FILE={{ .Values.licenseServer.licenseFile }}
+    LOG_FILE={{ .Values.licenseServer.logFile }}

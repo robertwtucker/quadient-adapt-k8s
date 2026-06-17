@@ -1,0 +1,195 @@
+# Default values for adapt.
+#
+# This chart deploys the Quadient Inspire Adapt License Server, and
+# (optionally) integrates UA into the Inspire Scaler workflow via a
+# Kustomize post-renderer overlay shipped alongside the chart.
+#
+# Demo install:
+#   helm install adapt ./adapt \
+#     --set-file licenseServer.license=./LicSer.lic \
+#     --post-renderer ./kustomize-post.sh
+#
+# LS-only install (no Inspire, no Scaler-side injection):
+#   helm install adapt ./adapt \
+#     --set inspire.enabled=false \
+#     --set-file licenseServer.license=./LicSer.lic
+
+# === Image registry ===
+# Default points at the SPT private registry. Override to redirect to a
+# mirror if needed. NOTE: this value only affects Helm-templated workloads
+# (the License Server Deployment). The UA image reference in the Kustomize
+# overlay is hard-coded; fork the chart to point UA elsewhere.
+image:
+  registry: registry.sptcloud.com
+
+# Image pull secrets for the private registry. Consumer creates the
+# corresponding Secret resource out-of-band (or via a separate chart).
+imagePullSecrets: []
+# - name: sptcloud-registry-creds
+
+# === Naming overrides ===
+nameOverride: ""
+fullnameOverride: ""
+
+# === License Server ===
+# Always renders. LS is this chart's namesake workload.
+licenseServer:
+  image:
+    # Joined with .Values.image.registry to form the full image reference.
+    repository: adapt/license-server
+    # Defaults to the chart's appVersion when empty.
+    tag: ""
+    pullPolicy: IfNotPresent
+
+  # Pod hostname. The demo license file is pinned to "sandbox" — the
+  # convention from Quadient demo Windows VMs. Override for production
+  # license files keyed to other hostnames.
+  hostname: sandbox
+
+  # Path to the license file inside the container. The chart-managed
+  # Secret (when .Values.licenseServer.license is non-empty) mounts here.
+  licenseFile: /opt/adapt/etc/LicSer.lic
+
+  # Path to the LS daemon log file.
+  logFile: /var/log/adapt/cdplicser.log
+
+  # Demo path: chart renders a Secret with this content and auto-mounts
+  # it at licenseFile (subPath mount). The Adapt license file is binary
+  # (encrypted/signed Quadient payload), so this value must be base64-
+  # encoded. Provide via:
+  #   --set licenseServer.license=$(base64 -i ./LicSer.lic | tr -d '\n')
+  # Leave empty to use the expert path (volumes/volumeMounts below).
+  license: ""
+
+  # Service for the LS daemon. Default ClusterIP (in-cluster only); LS is
+  # a TCP daemon consumed by Scaler/UA inside the cluster, not externally.
+  service:
+    type: ClusterIP
+    port: 5000
+
+  # Container resource requests/limits — empty defaults. Override per env.
+  resources: {}
+    # limits:
+    #   cpu: 500m
+    #   memory: 512Mi
+    # requests:
+    #   cpu: 100m
+    #   memory: 256Mi
+
+  # Liveness probe: detects when the LS daemon needs a restart.
+  livenessProbe:
+    tcpSocket:
+      port: 5000
+    initialDelaySeconds: 10
+    periodSeconds: 5
+    timeoutSeconds: 5
+    failureThreshold: 5
+    successThreshold: 1
+
+  # Readiness probe: gates Service routing until LS is accepting traffic.
+  readinessProbe:
+    tcpSocket:
+      port: 5000
+    initialDelaySeconds: 20
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 5
+    successThreshold: 1
+
+  # Pod-level security context.
+  podSecurityContext:
+    runAsUser: 1001
+    runAsNonRoot: true
+    fsGroup: 1001
+    seccompProfile:
+      type: RuntimeDefault
+
+  # Container-level security context.
+  securityContext:
+    allowPrivilegeEscalation: false
+    privileged: false
+    readOnlyRootFilesystem: false
+    runAsUser: 1001
+    runAsGroup: 1001
+    capabilities:
+      drop:
+        - ALL
+
+  # Expert path: bring your own volumes and volumeMounts. A mount at
+  # /opt/adapt/etc supersedes the chart-managed Secret + ConfigMap
+  # mounts below it (kubelet resolves overlapping paths in favor of
+  # the directory mount). Use this when you want full control over
+  # /opt/adapt/etc/ — license, cdplicser.cfg, and any other config files.
+  volumes: []
+    # - name: adapt-etc
+    #   secret:
+    #     secretName: my-adapt-etc-bundle
+  volumeMounts: []
+    # - name: adapt-etc
+    #   mountPath: /opt/adapt/etc
+    #   readOnly: true
+
+  # Additional pod-template metadata.
+  podAnnotations: {}
+  podLabels: {}
+
+  # Node placement controls — empty by default.
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# === UA (User Agent) ===
+# UA deploys only as an initContainer inside the Inspire Scaler Pod, via
+# the Kustomize post-renderer overlay (i.e., only when inspire.enabled
+# is true AND --post-renderer ./kustomize-post.sh is used). When
+# inspire.enabled is false, no UA workload runs and the values below
+# are inert.
+#
+# The UA image reference (registry/path/tag) is hard-coded in the
+# overlay per the v1.0.0 design — values do not flow into the overlay.
+# To change the UA image, edit kustomize/scaler-inject/initcontainer-patch.yaml.
+ua:
+  # Path to the UA license file inside the deploy-ua initContainer.
+  # The chart-managed Secret (when .Values.ua.license is non-empty)
+  # mounts here as a subPath (file-level), leaving the image's other
+  # baked-in etc/ files (adeptua.ini, ads.ini, etc.) visible.
+  licenseFile: /opt/adapt/etc/adeptua.lic
+
+  # Demo path: chart renders a Secret named `adapt-ua-license` with
+  # this content (key: adeptua.lic), and the overlay mounts it at
+  # .Values.ua.licenseFile via subPath. The Adapt UA license file is
+  # binary (encrypted/signed Quadient payload), so this value must be
+  # base64-encoded. Provide via:
+  #   --set ua.license=$(base64 -i ./adeptua.lic | tr -d '\n')
+  # When empty: the overlay's volume reference becomes a no-op (Secret
+  # marked optional: true), but UA will fail license validation at
+  # runtime when Scaler tries to exec it. NOTES.txt surfaces a warning
+  # if you forget to set this while inspire.enabled is true.
+  #
+  # Constraint: only one Adapt release per namespace can use this
+  # demo path. The chart-managed Secret name is `adapt-ua-license`
+  # (not release-prefixed) to match the hard-coded overlay reference.
+  # See kustomize/scaler-inject/initcontainer-patch.yaml.
+  license: ""
+
+# === Service account ===
+serviceAccount:
+  create: true
+  automount: true
+  annotations: {}
+  # If unset and create is true, a name is generated from the fullname.
+  name: ""
+
+# === Inspire integration ===
+# When enabled, pulls the Inspire subchart and the Kustomize post-renderer
+# overlay injects the deploy-ua initContainer into Inspire's Scaler
+# Deployment. When disabled, the chart deploys LS only and the overlay
+# (if applied) is a no-op (no Scaler Deployment to patch).
+#
+# Inspire subchart values flow under this key. Example:
+#   inspire:
+#     enabled: true
+#     scaler:
+#       replicaCount: 2
+inspire:
+  enabled: true

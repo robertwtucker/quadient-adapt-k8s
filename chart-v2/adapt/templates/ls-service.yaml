@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "adapt.licenseServer.fullname" . }}
+  labels:
+    {{- include "adapt.licenseServer.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.licenseServer.service.type }}
+  ports:
+    - name: daemon
+      port: {{ .Values.licenseServer.service.port }}
+      targetPort: daemon
+      protocol: TCP
+  selector:
+    {{- include "adapt.licenseServer.selectorLabels" . | nindent 4 }}

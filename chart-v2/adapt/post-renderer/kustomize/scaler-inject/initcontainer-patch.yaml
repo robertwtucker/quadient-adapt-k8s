@@ -1,0 +1,54 @@
+# Strategic-merge patch — injects the deploy-ua initContainer into the
+# Inspire Scaler Deployment, plus a ua-share emptyDir volume and a
+# corresponding volumeMount on the main scaler container at
+# /opt/adapt/ua, so Scaler can exec Adapt UA binaries from there.
+#
+# Cross-container mount-path remap:
+#   deploy-ua initContainer mounts ua-share at /opt/adapt/share — the
+#   entrypoint copies UA binaries to that path inside its own container.
+#   The main scaler container mounts the same ua-share volume at
+#   /opt/adapt/ua — the underlying emptyDir bytes are shared; the mount
+#   path differs per container.
+#
+# Image reference is hard-coded per Q5 mechanism (a). Values do not flow
+# into this overlay. To change the UA image:
+#   1. Edit this file.
+#   2. Bump the chart version.
+#   3. Re-release.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: inspire-scaler
+spec:
+  template:
+    spec:
+      initContainers:
+        - name: deploy-ua
+          image: registry.sptcloud.com/adapt/ua:2.4.1.22-HF-5846ace-dirty
+          imagePullPolicy: IfNotPresent
+          args: ['share']
+          volumeMounts:
+            - name: ua-share
+              mountPath: /opt/adapt/share
+            # UA license — file-level subPath mount so the image's baked
+            # etc/ tree (adeptua.ini, ads.ini, GenericStartup.ini, etc.)
+            # remains visible. The Secret `adapt-ua-license` is rendered
+            # by the chart when .Values.ua.license is set; marked
+            # optional so installs don't fail when ua.license is empty
+            # (UA will fail license validation at runtime instead).
+            - name: ua-license
+              mountPath: /opt/adapt/etc/adeptua.lic
+              subPath: adeptua.lic
+              readOnly: true
+      containers:
+        - name: inspire-scaler
+          volumeMounts:
+            - name: ua-share
+              mountPath: /opt/adapt/ua
+      volumes:
+        - name: ua-share
+          emptyDir: {}
+        - name: ua-license
+          secret:
+            secretName: adapt-ua-license
+            optional: true

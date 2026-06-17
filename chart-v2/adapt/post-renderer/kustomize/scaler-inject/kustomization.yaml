@@ -1,0 +1,16 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Base manifests are written at install time by the kustomize-post.sh
+# post-renderer (they come from Helm's stdout). Do not invoke kustomize
+# directly against this directory — it has no checked-in base.
+resources:
+  - rendered-manifests.yaml
+
+patches:
+  - path: initcontainer-patch.yaml
+    target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: inspire-scaler
