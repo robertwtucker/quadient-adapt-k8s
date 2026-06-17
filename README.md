@@ -9,7 +9,7 @@ from Quadient.
 
 The **Helm chart** for deploying these images on Kubernetes lives in
 [`spt-charts`](https://github.com/robertwtucker/spt-charts) at
-`charts/adapt/` — see that repo for install instructions and the
+`adapt/` — see that repo for install instructions and the
 Kustomize-based Scaler injection.
 
 ## Repo layout
@@ -68,7 +68,7 @@ inside the tarball), not a refarch SemVer. Current cuts:
 - `registry.sptcloud.com/adapt/license-server:1.21.0.458-HF`
 - `registry.sptcloud.com/adapt/ua:2.4.1.22-HF`
 
-The matching Helm chart in `spt-charts/charts/adapt/` carries these versions
+The matching Helm chart in `spt-charts/adapt/` carries these versions
 in its `Chart.yaml` annotations
 (`com.quadient.spt.refarch.adapt-{ls,ua}-version`) and references them in the
 templated LS Deployment + the Kustomize overlay's UA initContainer. Bumping

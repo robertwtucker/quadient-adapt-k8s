@@ -1,6 +1,0 @@
-dependencies:
-- name: inspire
-  repository: oci://ghcr.io/robertwtucker/charts
-  version: 1.0.0
-digest: sha256:154aa7013223ec296648fbeaec60674c603f3b51a4a1f7ce340b45223cbde3d5
-generated: "2026-06-16T14:51:30.121495-04:00"
